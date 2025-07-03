@@ -1,18 +1,24 @@
 import requests
 import time
-from datetime import datetime
 import schedule
+from datetime import datetime
 from flask import Flask
-from threading import Thread
-from telegram import Update, Bot
-from telegram.ext import CommandHandler, Updater, CallbackContext
+from telegram import Bot, Update
+from telegram.ext import CommandHandler, ApplicationBuilder, ContextTypes
 
-# Telegram Config
+# Telegram bot config
 BOT_TOKEN = "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM"
-OWNER_ID = 6268938019  # Only this user can use /send command
-bot = Bot(BOT_TOKEN)
+OWNER_ID = 6268938019  # Your Telegram ID
+bot = Bot(token=BOT_TOKEN)
 
-# Course Details
+# Flask app to keep alive
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "💞MR RAJPUT💞 Bot is alive!"
+
+# Courses and their Chat IDs
 COURSES = {
     "696": {"name": "PSIR BY SANJAY THAKUR", "chat_id": "-1002898647258"},
     "686": {"name": "UPSC Mains Answer Writing Program 2025", "chat_id": "-1002565001732"},
@@ -25,32 +31,13 @@ COURSES = {
     "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"}
 }
 
-# KGS API URLs
+# API URLs
 LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
 LESSONS_URL = "https://admin2.khanglobalstudies.com/api/user/courses/{course_id}/v2-lessons?new=1&medium=1"
 
-# Login Credentials
+# Login credentials
 username = "7903443604"
 password = "Gautam@123"
-
-# Flask App to keep Koyeb instance alive
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "💞MR RAJPUT💞 Bot is running!"
-
-def telegram_send_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text[:4096],
-        "parse_mode": "HTML"
-    }
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print(f"[!] Telegram Error: {e}")
 
 headers = {
     "Accept": "application/json",
@@ -59,16 +46,34 @@ headers = {
     "Authorization": "Bearer undefined"
 }
 
+def telegram_send_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text[:4096],
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    try:
+        r = requests.post(url, data=payload)
+        if r.status_code == 200:
+            print(f"[+] Sent to {chat_id}")
+        else:
+            print(f"[-] Failed to send to {chat_id}")
+    except Exception as e:
+        print(f"[!] Telegram error: {e}")
+
 def login():
     payload = {"phone": username, "password": password}
     try:
         print("[*] Logging in...")
         r = requests.post(LOGIN_URL, headers=headers, json=payload)
-        if r.status_code == 200 and r.json().get("token"):
-            token = r.json()["token"]
-            headers["Authorization"] = f"Bearer {token}"
-            print("[+] Login successful")
-            return True
+        if r.status_code == 200:
+            token = r.json().get("token")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                print("[+] Login successful")
+                return True
         print("[-] Login failed")
     except Exception as e:
         print(f"[!] Login error: {e}")
@@ -82,19 +87,23 @@ def fetch_all_courses():
             if r.status_code != 200:
                 print(f"[!] Failed to fetch for {course_info['name']}")
                 continue
+
             data = r.json()
-            today_classes = data.get("todayclasses", [])
+            today_classes = data.get("todayclasses")
             if not today_classes:
                 print(f"[-] No new lessons for {course_info['name']}")
                 continue
+
             for cls in today_classes:
                 name = cls.get("name", "No Name")
                 video_url = cls.get("video_url")
                 hd_url = cls.get("hd_video_url")
                 pdfs = cls.get("pdfs", [])
+
                 notes_links = ""
                 ppt_links = ""
-                for pdf in pdfs:
+
+                for pdf in pdfs or []:
                     title = pdf.get("title", "").lower()
                     url = pdf.get("url", "")
                     if "ppt" in title:
@@ -113,6 +122,7 @@ def fetch_all_courses():
                 if hd_url:
                     message += f"🔗 <a href=\"{hd_url}\">YouTube Link</a>\n"
                 message += notes_links + ppt_links
+
                 telegram_send_message(course_info["chat_id"], message)
         except Exception as e:
             print(f"[!] Error for {course_info['name']}: {e}")
@@ -120,43 +130,46 @@ def fetch_all_courses():
 def job():
     if login():
         fetch_all_courses()
-        print("✅ Done: Messages sent to all groups.")
+        print("✅ Done: Messages sent to all groups.\n")
 
-# Auto run job at 9:30 PM daily
+# ---------------- COMMAND HANDLERS ----------------
+
+async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("⛔ Unauthorized")
+        return
+    await update.message.reply_text("📤 Sending lessons...")
+    job()
+    await update.message.reply_text("✅ All messages sent.")
+
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Bot is alive!")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "/send - Send lessons manually\n"
+        "/ping - Check bot status\n"
+        "/help - Show this help"
+    )
+
+# ---------------- BOT SETUP ----------------
+
+def start_bot():
+    app_telegram = ApplicationBuilder().token(BOT_TOKEN).build()
+    app_telegram.add_handler(CommandHandler("send", send_command))
+    app_telegram.add_handler(CommandHandler("ping", ping_command))
+    app_telegram.add_handler(CommandHandler("help", help_command))
+    app_telegram.run_polling()
+
+# Schedule daily auto send at 9:30 PM
 schedule.every().day.at("21:30").do(job)
 
-def schedule_loop():
+if __name__ == "__main__":
+    from threading import Thread
+    Thread(target=start_bot).start()
+
+    Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
+
     while True:
         schedule.run_pending()
-        time.sleep(30)
-
-# Telegram Command: /send (only by OWNER)
-def command_listener():
-    updater = Updater(BOT_TOKEN)
-    dp = updater.dispatcher
-
-    def send_handler(update: Update, context: CallbackContext):
-        if update.effective_user.id == OWNER_ID:
-            text = " ".join(context.args)
-            if text:
-                bot.send_message(chat_id=OWNER_ID, text=f"📤 You said:\n{text}")
-            else:
-                update.message.reply_text("❌ Please provide message after /send")
-        else:
-            update.message.reply_text("❌ Unauthorized")
-
-    dp.add_handler(CommandHandler("send", send_handler))
-    updater.start_polling()
-
-if __name__ == '__main__':
-    # 1. Notify after deployment
-    telegram_send_message(OWNER_ID, "✅ Bot deployed successfully on Koyeb!\n🚀 Running now.")
-    
-    # 2. Start Flask server in background
-    Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
-    
-    # 3. Start Telegram bot command listener
-    Thread(target=command_listener).start()
-
-    # 4. Start Scheduler loop
-    schedule_loop()
+        time.sleep(10)
