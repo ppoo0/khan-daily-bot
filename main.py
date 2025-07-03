@@ -2,21 +2,14 @@ import requests
 from datetime import datetime
 import schedule
 import time
-import threading
 from flask import Flask
+from threading import Thread
 
-# Flask App
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "💞 Bot is running on Koyeb! 💞"
-
-# Telegram Config
+# --- Telegram Bot Config ---
 BOT_TOKEN = "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Courses Data
+# --- Courses & Chat IDs ---
 COURSES = {
     "696": {"name": "PSIR BY SANJAY THAKUR", "chat_id": "-1002898647258"},
     "686": {"name": "UPSC Mains Answer Writing Program 2025", "chat_id": "-1002565001732"},
@@ -25,10 +18,11 @@ COURSES = {
     "700": {"name": "HISTORY OPTIONAL HINDI MEDIUM", "chat_id": "-1002662799575"},
     "667": {"name": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium", "chat_id": "-1002810220072"},
     "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar", "chat_id": "-1002642433551"},
-    "617": {"name": "Pocket gk batch","chat_id": "-1002778223155"},
-    "372": {"name": "Geography optional english medium","chat_id": "-1002170644891"}
+    "617": {"name": "Pocket gk batch", "chat_id": "-1002778223155"},
+    "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"}
 }
 
+# --- Login & Lesson URLs ---
 LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
 LESSONS_URL = "https://admin2.khanglobalstudies.com/api/user/courses/{course_id}/v2-lessons?new=1&medium=1"
 
@@ -80,7 +74,7 @@ def fetch_all_courses():
                 continue
 
             data = r.json()
-            today_classes = data.get("todayclasses") or []
+            today_classes = data.get("todayclasses", [])
             if not today_classes:
                 print(f"[-] No new lessons for {course_info['name']}")
                 continue
@@ -89,7 +83,7 @@ def fetch_all_courses():
                 name = cls.get("name", "No Name")
                 video_url = cls.get("video_url")
                 hd_url = cls.get("hd_video_url")
-                pdfs = cls.get("pdfs") or []
+                pdfs = cls.get("pdfs", [])
 
                 notes_links = ""
                 ppt_links = ""
@@ -121,17 +115,26 @@ def fetch_all_courses():
         except Exception as e:
             print(f"[!] Error for {course_info['name']}: {e}")
 
-def scheduled_job():
+def job():
+    print("[*] Scheduled job running...")
     if login():
         fetch_all_courses()
         print("\n✅ Done: Messages sent to all groups.\n")
 
-def run_schedule():
-    schedule.every().day.at("21:30").do(scheduled_job)
+# --- Scheduler Background Thread ---
+def run_scheduler():
+    schedule.every().day.at("21:30").do(job)
     while True:
         schedule.run_pending()
         time.sleep(30)
 
+# --- Flask App to keep Koyeb instance alive ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
 if __name__ == "__main__":
-    threading.Thread(target=run_schedule).start()
+    Thread(target=run_scheduler).start()
     app.run(host="0.0.0.0", port=8080)
