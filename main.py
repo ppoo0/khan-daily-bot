@@ -1,44 +1,39 @@
 import requests
-import time
 import schedule
+import threading
+import asyncio
 from datetime import datetime
 from flask import Flask
-from telegram import Bot, Update
-from telegram.ext import CommandHandler, ApplicationBuilder, ContextTypes
+from telegram import Update, Bot
+from telegram.ext import CommandHandler, CallbackContext, Updater
 
-# Telegram bot config
+# Telegram Bot Config
 BOT_TOKEN = "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM"
-OWNER_ID = 6268938019  # Your Telegram ID
+CHAT_ID = 6268938019
 bot = Bot(token=BOT_TOKEN)
 
-# Flask app to keep alive
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "💞MR RAJPUT💞 Bot is alive!"
-
-# Courses and their Chat IDs
-COURSES = {
-    "696": {"name": "PSIR BY SANJAY THAKUR", "chat_id": "-1002898647258"},
-    "686": {"name": "UPSC Mains Answer Writing Program 2025", "chat_id": "-1002565001732"},
-    "691": {"name": "UPSC Adhyan Current Affairs (Hindi Medium) Batch 2026", "chat_id": "-1002821163148"},
-    "704": {"name": "GEOGRAPHY OPTIONAL HINDI MEDIUM SACHIN ARORA", "chat_id": "-1002871614152"},
-    "700": {"name": "HISTORY OPTIONAL HINDI MEDIUM", "chat_id": "-1002662799575"},
-    "667": {"name": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium", "chat_id": "-1002810220072"},
-    "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar", "chat_id": "-1002642433551"},
-    "617": {"name": "Pocket gk batch", "chat_id": "-1002778223155"},
-    "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"}
-}
+# User login credentials
+username = "7903443604"
+password = "Gautam@123"
 
 # API URLs
 LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
 LESSONS_URL = "https://admin2.khanglobalstudies.com/api/user/courses/{course_id}/v2-lessons?new=1&medium=1"
 
-# Login credentials
-username = "7903443604"
-password = "Gautam@123"
+# Course list
+COURSES = {
+    "696": {"name": "PSIR BY SANJAY THAKUR"},
+    "686": {"name": "UPSC Mains Answer Writing Program 2025"},
+    "691": {"name": "UPSC Adhyan Current Affairs (Hindi Medium) Batch 2026"},
+    "704": {"name": "GEOGRAPHY OPTIONAL HINDI MEDIUM SACHIN ARORA"},
+    "700": {"name": "HISTORY OPTIONAL HINDI MEDIUM"},
+    "667": {"name": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium"},
+    "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar"},
+    "617": {"name": "Pocket gk batch"},
+    "372": {"name": "Geography optional english medium"}
+}
 
+# Shared headers
 headers = {
     "Accept": "application/json",
     "Content-Type": "application/json",
@@ -46,50 +41,33 @@ headers = {
     "Authorization": "Bearer undefined"
 }
 
-def telegram_send_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text[:4096],
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    try:
-        r = requests.post(url, data=payload)
-        if r.status_code == 200:
-            print(f"[+] Sent to {chat_id}")
-        else:
-            print(f"[-] Failed to send to {chat_id}")
-    except Exception as e:
-        print(f"[!] Telegram error: {e}")
+# Telegram send function
+def telegram_send(text):
+    bot.send_message(chat_id=CHAT_ID, text=text[:4096], parse_mode="HTML")
 
+# Login and update token
 def login():
     payload = {"phone": username, "password": password}
     try:
-        print("[*] Logging in...")
         r = requests.post(LOGIN_URL, headers=headers, json=payload)
-        if r.status_code == 200:
-            token = r.json().get("token")
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                print("[+] Login successful")
-                return True
-        print("[-] Login failed")
+        if r.status_code == 200 and r.json().get("token"):
+            headers["Authorization"] = f"Bearer {r.json()['token']}"
+            print("[+] Login successful")
+            return True
     except Exception as e:
-        print(f"[!] Login error: {e}")
+        print(f"[!] Login failed: {e}")
     return False
 
-def fetch_all_courses():
+# Main fetcher function
+def fetch_and_send():
+    if not login():
+        return
     for course_id, course_info in COURSES.items():
-        url = LESSONS_URL.format(course_id=course_id)
         try:
+            url = LESSONS_URL.format(course_id=course_id)
             r = requests.get(url, headers=headers)
-            if r.status_code != 200:
-                print(f"[!] Failed to fetch for {course_info['name']}")
-                continue
-
             data = r.json()
-            today_classes = data.get("todayclasses")
+            today_classes = data.get("todayclasses", [])
             if not today_classes:
                 print(f"[-] No new lessons for {course_info['name']}")
                 continue
@@ -121,55 +99,48 @@ def fetch_all_courses():
                     message += f"🔗 <a href=\"{video_url}\">Server Link</a>\n"
                 if hd_url:
                     message += f"🔗 <a href=\"{hd_url}\">YouTube Link</a>\n"
-                message += notes_links + ppt_links
 
-                telegram_send_message(course_info["chat_id"], message)
+                message += notes_links + ppt_links
+                telegram_send(message)
         except Exception as e:
             print(f"[!] Error for {course_info['name']}: {e}")
 
-def job():
-    if login():
-        fetch_all_courses()
-        print("✅ Done: Messages sent to all groups.\n")
+# Manual bot commands
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text("/send - Send today's lessons\n/ping - Bot is alive\n/help - List commands")
 
-# ---------------- COMMAND HANDLERS ----------------
+def ping(update: Update, context: CallbackContext):
+    update.message.reply_text("✅ Bot is Alive!")
 
-async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        await update.message.reply_text("⛔ Unauthorized")
-        return
-    await update.message.reply_text("📤 Sending lessons...")
-    job()
-    await update.message.reply_text("✅ All messages sent.")
-
-async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Bot is alive!")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "/send - Send lessons manually\n"
-        "/ping - Check bot status\n"
-        "/help - Show this help"
-    )
-
-# ---------------- BOT SETUP ----------------
+def send(update: Update, context: CallbackContext):
+    update.message.reply_text("📤 Sending lessons...")
+    fetch_and_send()
 
 def start_bot():
-    app_telegram = ApplicationBuilder().token(BOT_TOKEN).build()
-    app_telegram.add_handler(CommandHandler("send", send_command))
-    app_telegram.add_handler(CommandHandler("ping", ping_command))
-    app_telegram.add_handler(CommandHandler("help", help_command))
-    app_telegram.run_polling()
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(CommandHandler("ping", ping))
+    dp.add_handler(CommandHandler("send", send))
+    updater.start_polling()
 
-# Schedule daily auto send at 9:30 PM
-schedule.every().day.at("21:30").do(job)
+# Schedule 9:30 PM job
+schedule.every().day.at("21:30").do(fetch_and_send)
 
-if __name__ == "__main__":
-    from threading import Thread
-    Thread(target=start_bot).start()
+# Flask for Koyeb keepalive
+app = Flask(__name__)
+@app.route("/")
+def home():
+    return "Bot Active!"
 
-    Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
-
+# Threads for bot + scheduler
+threading.Thread(target=start_bot).start()
+def run_scheduler():
     while True:
         schedule.run_pending()
         time.sleep(10)
+threading.Thread(target=run_scheduler).start()
+
+# Start Flask app
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
