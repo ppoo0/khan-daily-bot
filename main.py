@@ -2,6 +2,7 @@ import requests
 from datetime import datetime
 import schedule
 import time
+from flask import Flask
 
 # Telegram Bot Config
 BOT_TOKEN = "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM"
@@ -16,8 +17,8 @@ COURSES = {
     "700": {"name": "HISTORY OPTIONAL HINDI MEDIUM", "chat_id": "-1002662799575"},
     "667": {"name": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium", "chat_id": "-1002810220072"},
     "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar", "chat_id": "-1002642433551"},
-    "617": {"name": "Pocket gk batch","chat_id": "-1002778223155"},
-    "372": {"name": "Geography optional english medium","chat_id": "-1002170644891"}
+    "617": {"name": "Pocket gk batch", "chat_id": "-1002778223155"},
+    "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"}
 }
 
 LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
@@ -117,10 +118,27 @@ def job():
         fetch_all_courses()
         print("\n✅ Done: Messages sent to all groups.\n")
 
-# Schedule it at 9:30 PM daily
+# Run once immediately when script starts
+job()
+
+# Schedule job at 9:30 PM daily
 schedule.every().day.at("21:30").do(job)
 
-while True:
-    schedule.run_pending()
-    time.sleep(30)
-                                               
+def run_schedule():
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
+
+# Start background scheduler in thread
+import threading
+t = threading.Thread(target=run_schedule)
+t.start()
+
+# Flask server to keep Koyeb app alive
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "💞 Bot is running! 💞"
+
+app.run(host="0.0.0.0", port=8080)
