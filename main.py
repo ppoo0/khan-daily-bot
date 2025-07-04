@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import CommandHandler, CallbackContext, Updater, Dispatcher
+from telegram.ext import CommandHandler, CallbackContext, Dispatcher
 
 # Environment variables
 import os
@@ -144,7 +144,12 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(), bot)
-    updater.dispatcher.process_update(update)
+    dispatcher = Dispatcher(bot, None, workers=0)
+    dispatcher.add_handler(CommandHandler("help", help_command))
+    dispatcher.add_handler(CommandHandler("ping", ping))
+    dispatcher.add_handler(CommandHandler("send", send))
+    dispatcher.add_handler(CommandHandler("grpsend", grpsend))
+    dispatcher.process_update(update)
     return '', 200
 
 # Telegram bot commands
@@ -197,26 +202,8 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(10)
 
-# Start bot with webhook
-def start_bot():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("ping", ping))
-    dp.add_handler(CommandHandler("send", send))
-    dp.add_handler(CommandHandler("grpsend", grpsend))
-    def error_handler(update, context):
-        print(f"[!] Telegram Error: {context.error}")
-    dp.add_error_handler(error_handler)
-    webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'
-    updater.start_webhook(port=443, url_path="webhook")  # No listen parameter
-    updater.bot.set_webhook(url=webhook_url)
-    print(f"[+] Webhook server started at {webhook_url}")
-    return updater
-
 if __name__ == "__main__":
     set_webhook()
     send_deployment_notification()
-    updater = start_bot()
     threading.Thread(target=run_scheduler, daemon=True).start()
-    app.run(port=443)  # No host parameter
+    app.run(port=443)
