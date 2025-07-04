@@ -7,58 +7,197 @@ from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import CommandHandler, CallbackContext, Updater, Dispatcher
 
+# Environment variables
 import os
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM")
 CHAT_ID = int(os.getenv("CHAT_ID", "6268938019"))
+
 bot = Bot(token=BOT_TOKEN)
 
+# User login credentials
 username = "7903443604"
 password = "Gautam@123"
+
+# API URLs
 LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
 LESSONS_URL = "https://admin2.khanglobalstudies.com/api/user/courses/{course_id}/v2-lessons?new=1&medium=1"
-COURSES = {"696": {"name": "PSIR BY SANJAY THAKUR", "chat_id": "-1002898647258"}, ...}  # Shortened
-headers = {"Accept": "application/json", "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Authorization": "Bearer undefined"}
+
+# Course list
+COURSES = {
+    "696": {"name": "PSIR BY SANJAY THAKUR", "chat_id": "-1002898647258"},
+    "686": {"name": "UPSC Mains Answer Writing Program 2025", "chat_id": "-1002565001732"},
+    "691": {"name": "UPSC Adhyan Current Affairs (Hindi Medium) Batch 2026", "chat_id": "-1002821163148"},
+    "704": {"name": "GEOGRAPHY OPTIONAL HINDI MEDIUM SACHIN ARORA", "chat_id": "-1002871614152"},
+    "700": {"name": "HISTORY OPTIONAL HINDI MEDIUM", "chat_id": "-1002662799575"},
+    "667": {"name": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium", "chat_id": "-1002810220072"},
+    "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar", "chat_id": "-1002642433551"},
+    "617": {"name": "Pocket gk batch", "chat_id": "-1002778223155"},
+    "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"}
+}
+
+# Shared headers
+headers = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Authorization": "Bearer undefined"
+}
+
+# Credit message
 CREDIT_MESSAGE = "𝗧𝗛𝗜𝗦 𝗠𝗘𝗦𝗦𝗔𝗚𝗘 𝗦𝗘𝗡𝗧 𝗕𝗬 💞𝙼𝚁 𝚁𝙰𝙹𝙿𝚄𝚃💞"
 
+# Telegram send function
 def telegram_send(chat_id, text):
-    try: bot.send_message(chat_id=chat_id, text=text[:4096], parse_mode="HTML"); print(f"[+] Message sent to {chat_id}")
-    except Exception as e: print(f"[!] Failed: {e}")
+    try:
+        bot.send_message(chat_id=chat_id, text=text[:4096], parse_mode="HTML")
+        print(f"[+] Message sent to chat {chat_id}")
+    except Exception as e:
+        print(f"[!] Failed to send message to {chat_id}: {e}")
 
-def login():  # Same as before
+# Login and update token
+def login():
     payload = {"phone": username, "password": password}
-    try: r = requests.post(LOGIN_URL, headers=headers, json=payload); print(f"Login: {r.status_code} {r.text}")
-        if r.status_code == 200 and r.json().get("token"): headers["Authorization"] = f"Bearer {r.json()['token']}; return True"
-        else: print("[!] Login failed"); return False
-    except: print("[!] Login error"); return False
+    try:
+        r = requests.post(LOGIN_URL, headers=headers, json=payload)
+        print(f"Login Response (Status {r.status_code}): {r.text}")
+        if r.status_code == 200 and r.json().get("token"):
+            headers["Authorization"] = f"Bearer {r.json()['token']}"
+            print("[+] Login successful")
+            return True
+        else:
+            print(f"[!] Login failed: Status {r.status_code}, Response: {r.text}")
+    except Exception as e:
+        print(f"[!] Login failed: {e}")
+    return False
 
-def fetch_and_send():  # Same as before
-    if not login(): telegram_send(CHAT_ID, f"❌ Login failed!\n{CREDIT_MESSAGE}"); return
+# Main fetcher function
+def fetch_and_send():
+    if not login():
+        telegram_send(CHAT_ID, f"❌ Login failed! Check credentials.\n{CREDIT_MESSAGE}")
+        return
+    updates_sent = False
     for course_id, course_info in COURSES.items():
-        try: r = requests.get(LESSONS_URL.format(course_id=course_id), headers=headers); print(f"API: {course_info['name']} {r.status_code} {r.text}")
-            if r.status_code != 200: continue
-            data = r.json(); today_classes = data.get("todayclasses", [])
-            if not today_classes: continue
+        try:
+            url = LESSONS_URL.format(course_id=course_id)
+            r = requests.get(url, headers=headers)
+            print(f"API Response for {course_info['name']} (Status {r.status_code}): {r.text}")
+            if r.status_code != 200:
+                print(f"[!] HTTP Error for {course_info['name']}: Status {r.status_code}")
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                print(f"[!] JSON Error for {course_info['name']}: Response is not JSON - {r.text}")
+                continue
+            
+            today_classes = data.get("todayclasses", [])
+            if not today_classes:
+                print(f"[-] No new lessons for {course_info['name']}")
+                continue
+
             for cls in today_classes:
-                message = f"📅 {datetime.now().strftime('%d-%m-%Y')}\n📘 {course_info['name']}\n🎥 {cls.get('name', 'No Name')}\n"
-                if cls.get("video_url"): message += f"🔗 <a href='{cls['video_url']}'>Server</a>\n"
-                if cls.get("hd_video_url"): message += f"🔗 <a href='{cls['hd_video_url']}'>YouTube</a>\n"
-                for pdf in cls.get("pdfs", []): message += f"{'📝' if 'ppt' not in pdf.get('title', '').lower() else '📄'} <a href='{pdf['url']}'>{pdf.get('title', 'File')}</a>\n"
-                telegram_send(course_info["chat_id"], message + f"\n{CREDIT_MESSAGE}")
-        except Exception as e: print(f"[!] Error: {course_info['name']} {e}")
+                name = cls.get("name", "No Name")
+                video_url = cls.get("video_url")
+                hd_url = cls.get("hd_video_url")
+                pdfs = cls.get("pdfs", [])
 
+                notes_links = ""
+                ppt_links = ""
+
+                for pdf in pdfs or []:
+                    title = pdf.get("title", "").lower()
+                    url = pdf.get("url", "")
+                    if "ppt" in title:
+                        ppt_links += f"📄 <a href=\"{url}\">PPT</a>\n"
+                    else:
+                        notes_links += f"📝 <a href=\"{url}\">Notes</a>\n"
+
+                message = (
+                    f"📅 Date: {datetime.now().strftime('%d-%m-%Y')}\n"
+                    f"📘 Course: {course_info['name']}\n"
+                    f"🎥 Lesson: {name}\n"
+                )
+                if video_url:
+                    message += f"🔗 <a href=\"{video_url}\">Server Link</a>\n"
+                if hd_url:
+                    message += f"🔗 <a href=\"{hd_url}\">YouTube Link</a>\n"
+
+                message += notes_links + ppt_links + f"\n{CREDIT_MESSAGE}"
+                telegram_send(course_info["chat_id"], message)
+                updates_sent = True
+        except Exception as e:
+            print(f"[!] Error for {course_info['name']}: {e}")
+    
+    if updates_sent:
+        print("\n✅ Done: Messages sent to all groups.\n")
+    else:
+        print("\n[!] No updates to send for any course.\n")
+
+# Flask app
 app = Flask(__name__)
-@app.route("/") def home(): return "Bot Active!"
-@app.route('/webhook', methods=['POST']) def webhook(): update = Update.de_json(request.get_json(), bot); updater.dispatcher.process_update(update); return '', 200
 
-def help_command(update, context): update.message.reply_text(f"/send /ping /help /grpsend\n{CREDIT_MESSAGE}", parse_mode="HTML")
-def ping(update, context): update.message.reply_text(f"✅ Bot Alive!\n{CREDIT_MESSAGE}", parse_mode="HTML")
-def send(update, context): if update.effective_chat.id == CHAT_ID: update.message.reply_text(f"📤 Sending...\n{CREDIT_MESSAGE}", parse_mode="HTML"); fetch_and_send()
-def grpsend(update, context): if update.effective_chat.id == CHAT_ID: update.message.reply_text(f"📤 Sending all...\n{CREDIT_MESSAGE}", parse_mode="HTML"); fetch_and_send()
+@app.route("/")
+def home():
+    return "Bot Active!"
 
+# Webhook route
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(), bot)
+    updater.dispatcher.process_update(update)
+    return '', 200
+
+# Telegram bot commands
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "/send - Send today's lessons\n/ping - Bot is alive\n/help - List commands\n/grpsend - Send updates to all groups" + f"\n{CREDIT_MESSAGE}",
+        parse_mode="HTML"
+    )
+
+def ping(update: Update, context: CallbackContext):
+    update.message.reply_text(f"✅ Bot is Alive!\n{CREDIT_MESSAGE}", parse_mode="HTML")
+
+def send(update: Update, context: CallbackContext):
+    if update.effective_chat.id == CHAT_ID:
+        update.message.reply_text(f"📤 Sending lessons...\n{CREDIT_MESSAGE}", parse_mode="HTML")
+        fetch_and_send()
+    else:
+        update.message.reply_text("❌ Unauthorized")
+
+def grpsend(update: Update, context: CallbackContext):
+    if update.effective_chat.id == CHAT_ID:
+        update.message.reply_text(f"📤 Sending updates to all groups...\n{CREDIT_MESSAGE}", parse_mode="HTML")
+        fetch_and_send()
+    else:
+        update.message.reply_text("❌ Unauthorized")
+
+# Schedule 9:30 PM job
 schedule.every().day.at("21:30").do(fetch_and_send)
-def send_deployment_notification(): telegram_send(CHAT_ID, f"🚀 Deployed!\n{CREDIT_MESSAGE}"); print("[+] Notif sent")
-def set_webhook(): bot.set_webhook('https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'); print("[+] Webhook set")
-def run_scheduler(): while True: schedule.run_pending(); time.sleep(10)
+
+# Send deployment notification
+def send_deployment_notification():
+    try:
+        telegram_send(CHAT_ID, f"🚀 Bot successfully deployed on Koyeb!\n{CREDIT_MESSAGE}")
+        print("[+] Deployment notification sent to CHAT_ID")
+    except Exception as e:
+        print(f"[!] Failed to send deployment notification: {e}")
+
+# Set webhook
+def set_webhook():
+    webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'
+    try:
+        bot.set_webhook(webhook_url)
+        print(f"[+] Webhook set to {webhook_url}")
+    except Exception as e:
+        print(f"[!] Failed to set webhook: {e}")
+
+# Start scheduler
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(10)
+
+# Start bot with webhook
 def start_bot():
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -66,10 +205,13 @@ def start_bot():
     dp.add_handler(CommandHandler("ping", ping))
     dp.add_handler(CommandHandler("send", send))
     dp.add_handler(CommandHandler("grpsend", grpsend))
-    dp.add_error_handler(lambda u, c: print(f"[!] Error: {c.error}"))
+    def error_handler(update, context):
+        print(f"[!] Telegram Error: {context.error}")
+    dp.add_error_handler(error_handler)
+    webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'
     updater.start_webhook(listen="0.0.0.0", port=443, url_path="webhook")  # Changed to 443
-    updater.bot.set_webhook('https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook')
-    print("[+] Webhook started")
+    updater.bot.set_webhook(url=webhook_url)
+    print(f"[+] Webhook server started at {webhook_url}")
     return updater
 
 if __name__ == "__main__":
