@@ -209,7 +209,7 @@ def start_bot():
         print(f"[!] Telegram Error: {context.error}")
     dp.add_error_handler(error_handler)
     webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'
-    updater.start_webhook(port=443, url_path="webhook")  # Removed listen="0.0.0.0"
+    updater.start_webhook(port=443, url_path="webhook")  # No listen parameter
     updater.bot.set_webhook(url=webhook_url)
     print(f"[+] Webhook server started at {webhook_url}")
     return updater
@@ -219,4 +219,4 @@ if __name__ == "__main__":
     send_deployment_notification()
     updater = start_bot()
     threading.Thread(target=run_scheduler, daemon=True).start()
-    app.run(port=443)  # Removed host="0.0.0.0"
+    app.run(port=443)  # No host parameter
