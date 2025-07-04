@@ -4,19 +4,25 @@ import threading
 import time
 from datetime import datetime
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import CommandHandler, Updater, Dispatcher
+from telegram import Update, Bot
+from telegram.ext import CommandHandler, CallbackContext, Updater, Dispatcher
 
-BOT_TOKEN = "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM"
-OWNER_CHAT_ID = 6268938019
+# Environment variables for security
+import os
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM")
+CHAT_ID = int(os.getenv("CHAT_ID", "6268938019"))
 
-bot = Bot(BOT_TOKEN)
-updater = Updater(token=BOT_TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+bot = Bot(token=BOT_TOKEN)
 
-app = Flask(__name__)
+# User login credentials
+username = "7903443604"
+password = "Gautam@123"
 
-# Updated COURSES dictionary with course names and chat IDs
+# API URLs
+LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
+LESSONS_URL = "https://admin2.khanglobalstudies.com/api/user/courses/{course_id}/v2-lessons?new=1&medium=1"
+
+# Course list
 COURSES = {
     "696": {"name": "PSIR BY SANJAY THAKUR", "chat_id": "-1002898647258"},
     "686": {"name": "UPSC Mains Answer Writing Program 2025", "chat_id": "-1002565001732"},
@@ -29,124 +35,184 @@ COURSES = {
     "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"}
 }
 
-# Function to get updates for a single course
-def fetch_course_updates(course_id, course_name):
+# Shared headers
+headers = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Authorization": "Bearer undefined"
+}
+
+# Credit message
+CREDIT_MESSAGE = "𝗧𝗛𝗜𝗦 𝗠𝗘𝗦𝗦𝗔𝗚𝗘 𝗦𝗘𝗡𝗧 𝗕𝗬 💞𝙼𝚁 𝚁𝙰𝙹𝙿𝚄𝚃💞"
+
+# Telegram send function
+def telegram_send(chat_id, text):
     try:
-        url = f"https://app.khanglobalstudies.com/api/course-lessons?course_id={course_id}"
-        res = requests.get(url)
-        print(f"API Response for {course_name} (Status {res.status_code}): {res.text}")
-        if res.status_code != 200:
-            print(f"[!] HTTP Error for {course_name}: Status {res.status_code}")
-            return ""
-        try:
-            data = res.json()
-        except ValueError:
-            print(f"[!] JSON Error for {course_name}: Response is not JSON - {res.text}")
-            return ""
-        
-        lessons = data.get("data", {}).get("course", {}).get("lessons", [])
-        if not lessons:
-            print(f"[-] No new lessons for {course_name}")
-            return ""
-        
-        message = f"<b>{course_name}</b>\n"
-        for lesson in lessons[-3:]:  # latest 3 lessons
-            title = lesson.get("title", "No Title")
-            class_link = lesson.get("video", {}).get("video_url", "")
-            message += f"\n<b>{title}</b>\n"
-            if class_link:
-                message += f"<a href='{class_link}'>Watch Now</a>\n"
-            for file in lesson.get("pdfs", []):
-                fname = file.get("name", "PDF")
-                furl = file.get("url", "")
-                message += f"<a href='{furl}'>{fname}</a>\n"
-        
-        return message.strip() + "\n"
-    
+        bot.send_message(chat_id=chat_id, text=text[:4096], parse_mode="HTML")
+        print(f"[+] Message sent to chat {chat_id}")
     except Exception as e:
-        print(f"[!] Error for {course_name}: {e}")
-        return ""
+        print(f"[!] Failed to send message to {chat_id}: {e}")
 
-# Function to send updates to respective course chat IDs
-def send_daily_updates():
-    for cid, course_info in COURSES.items():
-        course_name = course_info["name"]
-        chat_id = course_info["chat_id"]
-        msg = fetch_course_updates(cid, course_name)
-        if msg:
-            try:
-                bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML', disable_web_page_preview=True)
-                print(f"[+] Sent updates for {course_name} to chat {chat_id}")
-            except Exception as e:
-                print(f"[!] Failed to send message to {chat_id} for {course_name}: {e}")
+# Login and update token
+def login():
+    payload = {"phone": username, "password": password}
+    try:
+        r = requests.post(LOGIN_URL, headers=headers, json=payload)
+        print(f"Login Response (Status {r.status_code}): {r.text}")
+        if r.status_code == 200 and r.json().get("token"):
+            headers["Authorization"] = f"Bearer {r.json()['token']}"
+            print("[+] Login successful")
+            return True
         else:
-            print(f"[!] No updates to send for {course_name}")
+            print(f"[!] Login failed: Status {r.status_code}, Response: {r.text}")
+    except Exception as e:
+        print(f"[!] Login failed: {e}")
+    return False
 
-    print("\n✅ Done: Messages sent to all groups.\n")
+# Main fetcher function
+def fetch_and_send():
+    if not login():
+        telegram_send(CHAT_ID, f"❌ Login failed! Check credentials.\n{CREDIT_MESSAGE}")
+        return
+    updates_sent = False
+    for course_id, course_info in COURSES.items():
+        try:
+            url = LESSONS_URL.format(course_id=course_id)
+            r = requests.get(url, headers=headers)
+            print(f"API Response for {course_info['name']} (Status {r.status_code}): {r.text}")
+            if r.status_code != 200:
+                print(f"[!] HTTP Error for {course_info['name']}: Status {r.status_code}")
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                print(f"[!] JSON Error for {course_info['name']}: Response is not JSON - {r.text}")
+                continue
+            
+            today_classes = data.get("todayclasses", [])
+            if not today_classes:
+                print(f"[-] No new lessons for {course_info['name']}")
+                continue
 
-# Flask root ping
+            for cls in today_classes:
+                name = cls.get("name", "No Name")
+                video_url = cls.get("video_url")
+                hd_url = cls.get("hd_video_url")
+                pdfs = cls.get("pdfs", [])
+
+                notes_links = ""
+                ppt_links = ""
+
+                for pdf in pdfs or []:
+                    title = pdf.get("title", "").lower()
+                    url = pdf.get("url", "")
+                    if "ppt" in title:
+                        ppt_links += f"📄 <a href=\"{url}\">PPT</a>\n"
+                    else:
+                        notes_links += f"📝 <a href=\"{url}\">Notes</a>\n"
+
+                message = (
+                    f"📅 Date: {datetime.now().strftime('%d-%m-%Y')}\n"
+                    f"📘 Course: {course_info['name']}\n"
+                    f"🎥 Lesson: {name}\n"
+                )
+                if video_url:
+                    message += f"🔗 <a href=\"{video_url}\">Server Link</a>\n"
+                if hd_url:
+                    message += f"🔗 <a href=\"{hd_url}\">YouTube Link</a>\n"
+
+                message += notes_links + ppt_links + f"\n{CREDIT_MESSAGE}"
+                telegram_send(course_info["chat_id"], message)
+                updates_sent = True
+        except Exception as e:
+            print(f"[!] Error for {course_info['name']}: {e}")
+    
+    if updates_sent:
+        print("\n✅ Done: Messages sent to all groups.\n")
+    else:
+        print("\n[!] No updates to send for any course.\n")
+
+# Flask for Koyeb keepalive
+app = Flask(__name__)
+
 @app.route("/")
 def home():
-    return "Bot Running..."
+    return "Bot Active!"
 
 # Webhook route for Telegram
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(), bot)
-    dispatcher.process_update(update)
+    updater.dispatcher.process_update(update)
     return '', 200
 
-# Scheduler job for 9:30 PM daily
-def schedule_job():
-    schedule.every().day.at("21:30").do(send_daily_updates)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+# Telegram bot commands
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "/send - Send today's lessons\n/ping - Bot is alive\n/help - List commands\n/grpsend - Send updates to all groups" + f"\n{CREDIT_MESSAGE}",
+        parse_mode="HTML"
+    )
 
-# Telegram Command Handlers
-def ping(update, context):
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Bot is alive!")
+def ping(update: Update, context: CallbackContext):
+    update.message.reply_text(f"✅ Bot is Alive!\n{CREDIT_MESSAGE}", parse_mode="HTML")
 
-def help_cmd(update, context):
-    help_text = "/ping - Check if bot is alive\n/send - Manually send today's updates to you\n/grpsend - Send updates to all groups manually"
-    context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
-
-def send(update, context):
-    if update.effective_chat.id == OWNER_CHAT_ID:
-        send_daily_updates()
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Updates sent to respective groups!")
+def send(update: Update, context: CallbackContext):
+    if update.effective_chat.id == CHAT_ID:
+        update.message.reply_text(f"📤 Sending lessons...\n{CREDIT_MESSAGE}", parse_mode="HTML")
+        fetch_and_send()
     else:
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Unauthorized")
+        update.message.reply_text("❌ Unauthorized")
 
-def grpsend(update, context):
-    if update.effective_chat.id == OWNER_CHAT_ID:
-        send_daily_updates()
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Updates sent to all groups!")
+def grpsend(update: Update, context: CallbackContext):
+    if update.effective_chat.id == CHAT_ID:
+        update.message.reply_text(f"📤 Sending updates to all groups...\n{CREDIT_MESSAGE}", parse_mode="HTML")
+        fetch_and_send()
     else:
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Unauthorized")
+        update.message.reply_text("❌ Unauthorized")
 
-# Error handler for Telegram
-def error_handler(update, context):
-    print(f"[!] Telegram Error: {context.error}")
+# Schedule 9:30 PM job
+schedule.every().day.at("21:30").do(fetch_and_send)
 
-# Add handlers
-dispatcher.add_handler(CommandHandler("ping", ping))
-dispatcher.add_handler(CommandHandler("help", help_cmd))
-dispatcher.add_handler(CommandHandler("send", send))
-dispatcher.add_handler(CommandHandler("grpsend", grpsend))
-dispatcher.add_error_handler(error_handler)
+# Send deployment notification
+def send_deployment_notification():
+    try:
+        telegram_send(CHAT_ID, f"🚀 Bot successfully deployed on Koyeb!\n{CREDIT_MESSAGE}")
+        print("[+] Deployment notification sent to CHAT_ID")
+    except Exception as e:
+        print(f"[!] Failed to send deployment notification: {e}")
 
 # Set webhook
 def set_webhook():
     webhook_url = 'https://your-app.koyeb.app/webhook'  # Replace with your Koyeb app URL
-    bot.set_webhook(webhook_url)
-    print(f"[+] Webhook set to {webhook_url}")
+    try:
+        bot.set_webhook(webhook_url)
+        print(f"[+] Webhook set to {webhook_url}")
+    except Exception as e:
+        print(f"[!] Failed to set webhook: {e}")
 
-# Start scheduler and bot
-def start_scheduler():
-    threading.Thread(target=schedule_job, daemon=True).start()
+# Start scheduler
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(10)
+
+# Start bot and scheduler
+def start_bot():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(CommandHandler("ping", ping))
+    dp.add_handler(CommandHandler("send", send))
+    dp.add_handler(CommandHandler("grpsend", grpsend))
+    # Error handler
+    def error_handler(update, context):
+        print(f"[!] Telegram Error: {context.error}")
+    dp.add_error_handler(error_handler)
+    return updater
 
 if __name__ == "__main__":
-    set_webhook()  # Set webhook instead of polling
-    start_scheduler()
-    app.run(host='0.0.0.0', port=8080)
+    set_webhook()  # Set webhook
+    send_deployment_notification()  # Send deployment success message
+    threading.Thread(target=run_scheduler, daemon=True).start()
+    app.run(host="0.0.0.0", port=8080)
