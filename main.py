@@ -1,146 +1,125 @@
 import requests
 import schedule
 import threading
-import asyncio
+import time
 from datetime import datetime
 from flask import Flask
-from telegram import Update, Bot
-from telegram.ext import CommandHandler, CallbackContext, Updater
+from telegram import Bot, Update
+from telegram.ext import CommandHandler, Updater
 
-# Telegram Bot Config
 BOT_TOKEN = "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM"
-CHAT_ID = 6268938019
-bot = Bot(token=BOT_TOKEN)
+OWNER_CHAT_ID = 6268938019
 
-# User login credentials
-username = "7903443604"
-password = "Gautam@123"
+bot = Bot(BOT_TOKEN)
+updater = Updater(token=BOT_TOKEN, use_context=True)
+dispatcher = updater.dispatcher
 
-# API URLs
-LOGIN_URL = "https://admin2.khanglobalstudies.com/api/login-with-password"
-LESSONS_URL = "https://admin2.khanglobalstudies.com/api/user/courses/{course_id}/v2-lessons?new=1&medium=1"
-
-# Course list
-COURSES = {
-    "696": {"name": "PSIR BY SANJAY THAKUR"},
-    "686": {"name": "UPSC Mains Answer Writing Program 2025"},
-    "691": {"name": "UPSC Adhyan Current Affairs (Hindi Medium) Batch 2026"},
-    "704": {"name": "GEOGRAPHY OPTIONAL HINDI MEDIUM SACHIN ARORA"},
-    "700": {"name": "HISTORY OPTIONAL HINDI MEDIUM"},
-    "667": {"name": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium"},
-    "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar"},
-    "617": {"name": "Pocket gk batch"},
-    "372": {"name": "Geography optional english medium"}
-}
-
-# Shared headers
-headers = {
-    "Accept": "application/json",
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Authorization": "Bearer undefined"
-}
-
-# Telegram send function
-def telegram_send(text):
-    bot.send_message(chat_id=CHAT_ID, text=text[:4096], parse_mode="HTML")
-
-# Login and update token
-def login():
-    payload = {"phone": username, "password": password}
-    try:
-        r = requests.post(LOGIN_URL, headers=headers, json=payload)
-        if r.status_code == 200 and r.json().get("token"):
-            headers["Authorization"] = f"Bearer {r.json()['token']}"
-            print("[+] Login successful")
-            return True
-    except Exception as e:
-        print(f"[!] Login failed: {e}")
-    return False
-
-# Main fetcher function
-def fetch_and_send():
-    if not login():
-        return
-    for course_id, course_info in COURSES.items():
-        try:
-            url = LESSONS_URL.format(course_id=course_id)
-            r = requests.get(url, headers=headers)
-            data = r.json()
-            today_classes = data.get("todayclasses", [])
-            if not today_classes:
-                print(f"[-] No new lessons for {course_info['name']}")
-                continue
-
-            for cls in today_classes:
-                name = cls.get("name", "No Name")
-                video_url = cls.get("video_url")
-                hd_url = cls.get("hd_video_url")
-                pdfs = cls.get("pdfs", [])
-
-                notes_links = ""
-                ppt_links = ""
-
-                for pdf in pdfs or []:
-                    title = pdf.get("title", "").lower()
-                    url = pdf.get("url", "")
-                    if "ppt" in title:
-                        ppt_links += f"📄 <a href=\"{url}\">PPT</a>\n"
-                    else:
-                        notes_links += f"📝 <a href=\"{url}\">Notes</a>\n"
-
-                message = (
-                    f"𝗧𝗛𝗜𝗦 𝗠𝗘𝗦𝗦𝗔𝗚𝗘 𝗦𝗘𝗡𝗧 𝗕𝗬 💞𝙼𝚁 𝚁𝙰𝙹𝙿𝚄𝚃💞\n"
-                    f"📅 Date: {datetime.now().strftime('%d-%m-%Y')}\n"
-                    f"📘 Course: {course_info['name']}\n"
-                    f"🎥 Lesson: {name}\n"
-                )
-                if video_url:
-                    message += f"🔗 <a href=\"{video_url}\">Server Link</a>\n"
-                if hd_url:
-                    message += f"🔗 <a href=\"{hd_url}\">YouTube Link</a>\n"
-
-                message += notes_links + ppt_links
-                telegram_send(message)
-        except Exception as e:
-            print(f"[!] Error for {course_info['name']}: {e}")
-
-# Manual bot commands
-def help_command(update: Update, context: CallbackContext):
-    update.message.reply_text("/send - Send today's lessons\n/ping - Bot is alive\n/help - List commands")
-
-def ping(update: Update, context: CallbackContext):
-    update.message.reply_text("✅ Bot is Alive!")
-
-def send(update: Update, context: CallbackContext):
-    update.message.reply_text("📤 Sending lessons...")
-    fetch_and_send()
-
-def start_bot():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("ping", ping))
-    dp.add_handler(CommandHandler("send", send))
-    updater.start_polling()
-
-# Schedule 9:30 PM job
-schedule.every().day.at("21:30").do(fetch_and_send)
-
-# Flask for Koyeb keepalive
 app = Flask(__name__)
+
+# Sample course IDs and names (for demo)
+COURSES = {
+    "1283": "PSIR BY SANJAY THAKUR",
+    "1284": "UPSC Mains Answer Writing Program 2025",
+    "1285": "UPSC Adhyan Current Affairs (Hindi Medium) Batch 2026",
+    "1286": "GEOGRAPHY OPTIONAL HINDI MEDIUM SACHIN ARORA",
+    "1287": "HISTORY OPTIONAL HINDI MEDIUM",
+    "1288": "UPSC (Pre + Mains) Foundation Batch 2026 Hindi Medium",
+    "1289": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम",
+    "1290": "Pocket gk batch",
+    "1291": "Geography optional english medium"
+}
+
+# Function to get updates for a single course
+def fetch_course_updates(course_id, course_name):
+    try:
+        url = f"https://app.khanglobalstudies.com/api/course-lessons?course_id={course_id}"
+        res = requests.get(url)
+        data = res.json()
+
+        lessons = data.get("data", {}).get("course", {}).get("lessons", [])
+        if not lessons:
+            print(f"[-] No new lessons for {course_name}")
+            return ""
+
+        message = f"<b>{course_name}</b>\n"
+        for lesson in lessons[-3:]:  # latest 3 lessons
+            title = lesson.get("title", "No Title")
+            class_link = lesson.get("video", {}).get("video_url", "")
+            message += f"\n<b>{title}</b>\n"
+            if class_link:
+                message += f"<a href='{class_link}'>Watch Now</a>\n"
+            for file in lesson.get("pdfs", []):
+                fname = file.get("name", "PDF")
+                furl = file.get("url", "")
+                message += f"<a href='{furl}'>{fname}</a>\n"
+
+        return message.strip() + "\n"
+
+    except Exception as e:
+        print(f"[!] Error for {course_name}: {e}")
+        return ""
+
+# Function to send updates to all courses
+def send_daily_updates():
+    final_msg = ""
+    for cid, cname in COURSES.items():
+        msg = fetch_course_updates(cid, cname)
+        if msg:
+            final_msg += msg + "\n"
+
+    if final_msg:
+        bot.send_message(chat_id=OWNER_CHAT_ID, text=final_msg, parse_mode='HTML', disable_web_page_preview=True)
+        print("\n\u2705 Done: Messages sent to all groups.\n")
+    else:
+        print("\n[!] No updates to send.\n")
+
+# Flask root ping
 @app.route("/")
 def home():
-    return "Bot Active!"
+    return "Bot Running..."
 
-# Threads for bot + scheduler
-threading.Thread(target=start_bot).start()
-def run_scheduler():
+# Scheduler job for 9:30 PM daily
+def schedule_job():
+    schedule.every().day.at("21:30").do(send_daily_updates)
     while True:
         schedule.run_pending()
-        time.sleep(10)
-threading.Thread(target=run_scheduler).start()
+        time.sleep(1)
 
-# Start Flask app
+# --- Telegram Command Handlers ---
+def ping(update, context):
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Bot is alive!")
+
+def help_cmd(update, context):
+    help_text = "/ping - Check if bot is alive\n/send - Manually send today's updates to you\n/grpsend - Send updates to all groups manually"
+    context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
+
+def send(update, context):
+    if update.effective_chat.id == OWNER_CHAT_ID:
+        send_daily_updates()
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Unauthorized")
+
+def grpsend(update, context):
+    if update.effective_chat.id == OWNER_CHAT_ID:
+        send_daily_updates()
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Unauthorized")
+
+# Add handlers
+dispatcher.add_handler(CommandHandler("ping", ping))
+dispatcher.add_handler(CommandHandler("help", help_cmd))
+dispatcher.add_handler(CommandHandler("send", send))
+dispatcher.add_handler(CommandHandler("grpsend", grpsend))
+
+# Start scheduler and bot in threads
+def start_scheduler():
+    threading.Thread(target=schedule_job).start()
+
+def start_bot():
+    threading.Thread(target=updater.start_polling).start()
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    start_scheduler()
+    start_bot()
+    app.run(host='0.0.0.0', port=8080)
+    
