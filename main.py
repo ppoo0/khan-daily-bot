@@ -7,7 +7,7 @@ from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import CommandHandler, CallbackContext, Updater, Dispatcher
 
-# Environment variables for security
+# Environment variables
 import os
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7541259425:AAFcgg2q7xQ2_xoGP-eRY3G8lcfQbTOoAzM")
 CHAT_ID = int(os.getenv("CHAT_ID", "6268938019"))
@@ -133,14 +133,14 @@ def fetch_and_send():
     else:
         print("\n[!] No updates to send for any course.\n")
 
-# Flask for Koyeb keepalive
+# Flask app
 app = Flask(__name__)
 
 @app.route("/")
 def home():
     return "Bot Active!"
 
-# Webhook route for Telegram
+# Webhook route
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(), bot)
@@ -184,7 +184,7 @@ def send_deployment_notification():
 
 # Set webhook
 def set_webhook():
-    webhook_url = 'https://your-app.koyeb.app/webhook'  # Replace with your Koyeb app URL
+    webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'  # Your Koyeb URL
     try:
         bot.set_webhook(webhook_url)
         print(f"[+] Webhook set to {webhook_url}")
@@ -197,7 +197,7 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(10)
 
-# Start bot and scheduler
+# Start bot with webhook
 def start_bot():
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -205,14 +205,18 @@ def start_bot():
     dp.add_handler(CommandHandler("ping", ping))
     dp.add_handler(CommandHandler("send", send))
     dp.add_handler(CommandHandler("grpsend", grpsend))
-    # Error handler
     def error_handler(update, context):
         print(f"[!] Telegram Error: {context.error}")
     dp.add_error_handler(error_handler)
+    webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'  # Your Koyeb URL
+    updater.start_webhook(listen="0.0.0.0", port=8080, url_path="webhook")
+    updater.bot.set_webhook(url=webhook_url)
+    print(f"[+] Webhook server started at {webhook_url}")
     return updater
 
 if __name__ == "__main__":
-    set_webhook()  # Set webhook
+    set_webhook()  # Initial webhook setup
     send_deployment_notification()  # Send deployment success message
+    updater = start_bot()  # Start bot with webhook
     threading.Thread(target=run_scheduler, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
