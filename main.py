@@ -187,15 +187,6 @@ def send_deployment_notification():
     except Exception as e:
         print(f"[!] Failed to send deployment notification: {e}")
 
-# Set webhook
-def set_webhook():
-    webhook_url = 'https://relaxed-vannie-asew-a4c78a9c.koyeb.app/webhook'
-    try:
-        bot.set_webhook(webhook_url)
-        print(f"[+] Webhook set to {webhook_url}")
-    except Exception as e:
-        print(f"[!] Failed to set webhook: {e}")
-
 # Start scheduler
 def run_scheduler():
     while True:
@@ -203,7 +194,6 @@ def run_scheduler():
         time.sleep(10)
 
 if __name__ == "__main__":
-    set_webhook()
     send_deployment_notification()
     threading.Thread(target=run_scheduler, daemon=True).start()
-    app.run(port=443)
+    app.run()  # Koyeb डिफॉल्ट सेटिंग्स यूज करेगा
