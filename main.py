@@ -33,7 +33,8 @@ COURSES = {
     "670": {"name": "UPSC G.S (Prelims+Mains)फाउंडेशन प्रोग्राम 2026 हिंदी माध्यम (Offline Class) Mukherjee Nagar", "chat_id": "-1002642433551"},
     "617": {"name": "Pocket gk batch", "chat_id": "-1002778223155"},
     "372": {"name": "Geography optional english medium", "chat_id": "-1002170644891"},
-    "718": {"name": "UGC NET/JRF Paper-I December Batch 2025", "chat_id": "1193912277"}
+    "718": {"name": "UGC NET/JRF Paper-I December Batch 2025", "chat_id": "1193912277"},
+    "716": {"name": "Math Foundation Batch By Amit Sir", "chat_id": "00009988"}
 }
 
 # Shared headers
